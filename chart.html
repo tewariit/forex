@@ -128,14 +128,15 @@
     <div class="fld">
       <label>ระบุ SL / TP เป็นหน่วย</label>
       <select id="fUnit">
-        <option value="pips">pips</option>
-        <option value="price">ราคา (เช่น ทองขยับกี่เหรียญ)</option>
+        <option value="price" selected>ระยะห่างจากราคาเข้า เป็นราคา (เช่น ห่าง 25 เหรียญ)</option>
+        <option value="level">ราคาจริงของ SL/TP (เช่น ตั้ง SL ที่ 4575)</option>
+        <option value="pips">ระยะห่างจากราคาเข้า เป็น pips</option>
       </select>
     </div>
 
     <div class="row2">
-      <div class="fld"><label>SL <span class="u">(pips)</span></label><input type="number" id="fSL" step="any"></div>
-      <div class="fld"><label>TP <span class="u">(pips)</span></label><input type="number" id="fTP" step="any"></div>
+      <div class="fld"><label>SL <span class="u">(ระยะห่าง)</span></label><input type="number" id="fSL" step="any"></div>
+      <div class="fld"><label>TP <span class="u">(ระยะห่าง)</span></label><input type="number" id="fTP" step="any"></div>
     </div>
 
     <div class="fld">
@@ -293,9 +294,11 @@
   var planRR = strat && strat.plan && strat.plan.rr ? strat.plan.rr : 0;
   var fixedPlan = !!(strat && strat.plan && strat.plan.slPips);
 
-  $("#fSL").value = fixedPlan ? strat.plan.slPips : (calc.cSL || 20);
-  $("#fTP").value = fixedPlan ? strat.plan.tpPips
-                  : (planRR ? (calc.cSL || 20) * planRR : 20);
+  var slPipsDefault = fixedPlan ? strat.plan.slPips : (calc.cSL || 20);
+  var tpPipsDefault = fixedPlan ? strat.plan.tpPips
+                    : (planRR ? (calc.cSL || 20) * planRR : 20);
+  $("#fSL").value = +(slPipsDefault * pip.size).toFixed(8);
+  $("#fTP").value = +(tpPipsDefault * pip.size).toFixed(8);
   $("#fPipSize").value  = pip.size;
   $("#fPipValue").value = pip.value;
   $("#fBalance").value  = calc.cBalance != null ? calc.cBalance : 1000;
@@ -321,9 +324,14 @@
     var unit = $("#fUnit").value;
 
     /* คิดทุกอย่างเป็น "ระยะราคา" ตรงกลาง แล้วค่อยแปลงกลับ
-       ทำให้หน่วย pips กับหน่วยราคาให้ผลตรงกันเสมอ */
-    var slDist = unit === "price" ? slIn : slIn * ps;   // SL กี่หน่วยราคา
-    var tpDist = unit === "price" ? tpIn : tpIn * ps;   // TP กี่หน่วยราคา
+       ทำให้หน่วย pips / ราคา / ราคาจริง ให้ผลตรงกันเสมอ
+       โหมด "level" ผู้ใช้กรอกราคา SL/TP จริง ๆ — ต้องมีราคาเข้าก่อนถึงจะรู้ระยะ */
+    var slDist = unit === "pips" ? slIn * ps
+               : unit === "level" ? (entry > 0 ? dir * (entry - slIn) : 0)
+               : slIn;                                 // SL กี่หน่วยราคา
+    var tpDist = unit === "pips" ? tpIn * ps
+               : unit === "level" ? (entry > 0 ? dir * (tpIn - entry) : 0)
+               : tpIn;                                 // TP กี่หน่วยราคา
     var valPerPrice = ps > 0 ? pv / ps : 0;             // ราคาขยับ 1 หน่วย = กี่ USD ต่อ 1.0 lot
 
     if (entry > 0) {
@@ -356,12 +364,12 @@
     $("#oRR").textContent = rr > 0 ? "1 : " + rr.toFixed(2) : "—";
     $("#oBE").textContent = rr > 0 ? (100 / (1 + rr)).toFixed(1) + "%" : "—";
 
-    var un = unit === "price" ? "" : " pips";
+    var un = unit === "pips" ? " pips" : "";
     var w = $("#oWarn");
     if (rr > 0 && rr < 1) {
       w.hidden = false;
-      w.textContent = "TP (" + tpIn + un + ") เล็กกว่า SL (" + slIn + un + ") — ต้องชนะเกิน " +
-        (100 / (1 + rr)).toFixed(1) + "% ของไม้จึงจะเสมอตัว ยังไม่รวมค่า spread และค่าคอมมิชชัน";
+      w.textContent = "TP (ระยะ " + tpDist.toFixed(dec) + un + ") เล็กกว่า SL (ระยะ " + slDist.toFixed(dec) + un +
+        ") — ต้องชนะเกิน " + (100 / (1 + rr)).toFixed(1) + "% ของไม้จึงจะเสมอตัว ยังไม่รวมค่า spread และค่าคอมมิชชัน";
     } else { w.hidden = true; }
 
     try {
@@ -387,17 +395,30 @@
     });
   }
 
-  /* สลับหน่วยแล้วแปลงตัวเลขในช่องให้เท่าเดิม — ไม่ให้ระยะ SL/TP เปลี่ยนไปเงียบ ๆ */
+  /* สลับหน่วยแล้วแปลงตัวเลขในช่องให้เท่าเดิม — ไม่ให้ระยะ SL/TP เปลี่ยนไปเงียบ ๆ
+     แปลงผ่าน "ระยะราคา" ตรงกลางเสมอ (โหมด level ต้องมีราคาเข้าก่อนถึงจะแปลงได้) */
+  var prevUnit = $("#fUnit").value;
+  var unitLabel = { pips: "(pips)", level: "(ราคาจริง)", price: "(ระยะห่าง)" };
   $("#fUnit").addEventListener("change", function () {
     var ps = num($("#fPipSize").value) || 1;
-    var toPrice = this.value === "price";
+    var entry = num($("#fEntry").value);
+    var dir = side === "buy" ? 1 : -1;
+    var newUnit = this.value;
+
     ["fSL", "fTP"].forEach(function (id) {
       var v = num($("#" + id).value);
-      $("#" + id).value = toPrice ? +(v * ps).toFixed(8) : +(v / ps).toFixed(8);
+      var isSL = id === "fSL";
+      var dist = prevUnit === "pips" ? v * ps
+               : prevUnit === "level" ? (entry > 0 ? (isSL ? dir * (entry - v) : dir * (v - entry)) : 0)
+               : v;
+      var out = newUnit === "pips" ? (ps > 0 ? dist / ps : dist)
+              : newUnit === "level" ? (entry > 0 ? (isSL ? entry - dir * dist : entry + dir * dist) : dist)
+              : dist;
+      $("#" + id).value = +out.toFixed(8);
     });
-    document.querySelectorAll(".fld .u").forEach(function (s) {
-      s.textContent = toPrice ? "(ราคา)" : "(pips)";
-    });
+
+    document.querySelectorAll(".fld .u").forEach(function (s) { s.textContent = unitLabel[newUnit]; });
+    prevUnit = newUnit;
     render();
   });
   render();
