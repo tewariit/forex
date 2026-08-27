@@ -1,0 +1,233 @@
+// @version=5
+// ============================================================
+//  Piranha (กลยุทธ์ที่ 2) — Mario Singh, 17 Proven Currency Trading Strategies
+//  หน้า 207–214 · ใช้บน Time frame M5
+//
+//  กฎจากหนังสือ:
+//    ซื้อ  = ราคาลงมา "สัมผัส" แถบล่างของ Bollinger Bands → เข้าซื้อทันที
+//    ขาย  = ราคาขึ้นไป "สัมผัส" แถบบนของ Bollinger Bands → เข้าขายทันที
+//    Bollinger Bands: Period 12, Shift 0, Deviation 2
+//    SL 10 pips · TP 5 pips · เลี่ยงช่วงข่าวสำคัญของสหรัฐฯ และอังกฤษ
+//
+//  หนังสือออกแบบกลยุทธ์นี้กับ GBP/USD และใช้ได้เฉพาะ "ตลาดแกว่งตัวในกรอบ"
+//  เมื่อตลาดเป็นแนวโน้ม ราคาจะเกาะแถบเดียวยาว (band walk) แล้วกวาด SL ซ้ำ ๆ
+//
+//  สคริปต์นี้ไม่ได้สั่งเทรดหรือแนะนำให้เข้าไม้ — แค่ปักจุดที่เงื่อนไขของหนังสือครบ
+//  วิธีใช้: TradingView → Pine Editor → วางโค้ดนี้ → Save → Add to chart
+// ============================================================
+indicator("Piranha (Bollinger Bands 12/2)", overlay = true)
+
+// ---------- ค่าอินดิเคเตอร์ (ตรงตามหนังสือ) ----------
+bbLen  = input.int(12,   "BB Period",    minval = 1, group = "อินดิเคเตอร์")
+bbMult = input.float(2.0, "BB Deviation", step = 0.1, group = "อินดิเคเตอร์")
+bbSrc  = input.source(close, "Apply to",  group = "อินดิเคเตอร์")
+
+// ---------- แผนไม้ ----------
+slPips  = input.float(10, "Stop Loss (pips)",   minval = 0, group = "แผนไม้")
+tpPips  = input.float(5,  "Take Profit (pips)", minval = 0, group = "แผนไม้")
+pipSize = input.float(0.0, "ขนาด 1 pip (0 = ให้คำนวณเอง)", step = 0.00001, group = "แผนไม้",
+     tooltip = "GBPUSD = 0.0001 · คู่ JPY = 0.01 · XAUUSD ส่วนใหญ่ = 0.1 — ยึดค่าจริงจากโบรกเกอร์เสมอ")
+
+// ---------- ตัวช่วยกรอง (ไม่ได้อยู่ในหนังสือ — ปิดได้) ----------
+useTrendGuard = input.bool(true, "เตือนเมื่อตลาดเป็นแนวโน้ม", group = "ตัวช่วยกรอง",
+     tooltip = "ไม่ได้อยู่ในหนังสือ — เพิ่มมาเพื่อเตือนว่าเงื่อนไข 'ตลาดแกว่งตัว' ของกลยุทธ์อาจไม่จริงแล้ว")
+walkBars    = input.int(3,  "แท่งที่ปิดนอกแถบติดกัน = แนวโน้ม", minval = 2, group = "ตัวช่วยกรอง")
+erLen       = input.int(20, "ช่วงแท่งที่ใช้วัดว่าเดินทางมีทิศหรือไม่", minval = 5, group = "ตัวช่วยกรอง")
+erThresh    = input.float(0.35, "ค่า Efficiency Ratio ที่ถือว่าเป็นแนวโน้ม",
+     step = 0.05, minval = 0.05, maxval = 1.0, group = "ตัวช่วยกรอง",
+     tooltip = "0 = ราคาเดินไปกลับไร้ทิศ (เหมาะกับกลยุทธ์นี้) · 1 = พุ่งทางเดียวล้วน · ยิ่งเลขน้อยยิ่งเตือนไว")
+holdBars    = input.int(6, "เตือนค้างไว้กี่แท่งหลังเข้าเงื่อนไข", minval = 1, group = "ตัวช่วยกรอง",
+     tooltip = "กันแถบเตือนกะพริบขึ้น ๆ ดับ ๆ ทุกแท่ง")
+muteInTrend = input.bool(false, "ซ่อนสัญญาณตอนเป็นแนวโน้ม", group = "ตัวช่วยกรอง")
+cooldown    = input.int(3, "เว้นอย่างน้อยกี่แท่งก่อนยิงสัญญาณถัดไป", minval = 0, group = "ตัวช่วยกรอง",
+     tooltip = "กันสัญญาณเกาะกลุ่มถี่ ๆ ตอนราคาเด้งเข้า-ออกแถบ")
+
+// ---------- ทดสอบผลย้อนหลังแบบหยาบ ----------
+showStats  = input.bool(true, "นับผลแพ้-ชนะของสัญญาณบนกราฟนี้", group = "ผลย้อนหลัง")
+spreadPips = input.float(0, "Spread (pips)", minval = 0, step = 0.1, group = "ผลย้อนหลัง",
+     tooltip = "ใส่ spread จริงของโบรกคุณ จะได้เห็นว่ามันกินเป้า 5 pips ไปเท่าไร ใส่ 0 = ไม่คิด")
+
+showSignals = input.bool(true, "แสดงลูกศรจุดเข้า", group = "การแสดงผล")
+showLevels  = input.bool(true, "วาดเส้น SL/TP ของสัญญาณล่าสุด", group = "การแสดงผล")
+levelBars   = input.int(12, "ความยาวเส้น SL/TP (แท่ง)", minval = 2, group = "การแสดงผล")
+showInfo    = input.bool(true, "แสดงกล่องสรุปค่า pip / SL / TP", group = "การแสดงผล")
+
+// ---------- คำนวณ ----------
+basis = ta.sma(bbSrc, bbLen)
+dev   = bbMult * ta.stdev(bbSrc, bbLen)
+upper = basis + dev
+lower = basis - dev
+
+// ทองมีทศนิยม 3 ตำแหน่งในหลายโบรก การใช้ mintick*10 จะได้ pip = 0.01 ซึ่งเล็กเกินไป
+// จึงตั้งทอง = 0.1 และเงิน = 0.01 ให้ตรงกับแผ่นสั่งเทรดในแอป (แก้เองได้ที่ช่อง pipSize)
+autoPip = str.contains(syminfo.ticker, "XAU") ? 0.1 :
+          str.contains(syminfo.ticker, "XAG") ? 0.01 : syminfo.mintick * 10
+pip = pipSize > 0 ? pipSize : autoPip
+
+// "สัมผัสแถบ" = ไส้เทียนแตะหรือทะลุแถบ (ตามข้อ 1 ของหนังสือ)
+touchLower = low  <= lower
+touchUpper = high >= upper
+
+// ยิงเฉพาะแท่งแรกที่สัมผัส เพื่อไม่ให้ปักซ้ำทุกแท่งระหว่างที่ราคาเกาะแถบ
+firstTouchLow  = touchLower and not touchLower[1]
+firstTouchHigh = touchUpper and not touchUpper[1]
+
+// ---- ตรวจ "ตลาดเป็นแนวโน้ม" (ไม่ได้อยู่ในหนังสือ) ----
+
+// ชั้นที่ 1 — band walk: ปิดนอกแถบติดกันหลายแท่ง (จับเทรนด์ที่ราคาเกาะแถบยาว)
+closeBelow = close < lower
+closeAbove = close > upper
+// nz() กัน na ในแท่งแรก ๆ ที่ยังไม่เคยมีแท่งปิดในกรอบเลย
+walkDown = nz(ta.barssince(not closeBelow), 0) >= walkBars
+walkUp   = nz(ta.barssince(not closeAbove), 0) >= walkBars
+
+// ชั้นที่ 2 — Efficiency Ratio (Kaufman): ระยะทางสุทธิ ÷ ระยะทางที่เดินจริงทั้งหมด
+// ใกล้ 0 = เดินไปกลับไร้ทิศ (ตลาดแกว่งตัว = เงื่อนไขที่กลยุทธ์นี้ต้องการ)
+// ใกล้ 1 = พุ่งทางเดียว (แนวโน้ม)
+// ใช้ตัวนี้แทนการวัดความชันเส้นกลาง เพราะความชันอย่างเดียวไวเกินและกะพริบทุกแท่ง
+netMove = math.abs(close - close[erLen])
+totMove = nz(math.sum(math.abs(close - close[1]), erLen), 0)
+er      = totMove > 0 ? netMove / totMove : 0.0
+
+// ค้างสัญญาณเตือนไว้ holdBars แท่ง กันแถบส้มขึ้น ๆ ดับ ๆ เป็นซี่
+trendRaw = walkDown or walkUp or er > erThresh
+var int trendHold = 0
+trendHold := trendRaw ? holdBars : math.max(trendHold - 1, 0)
+
+inTrend = useTrendGuard and trendHold > 0
+
+// เว้นระยะระหว่างสัญญาณ กันการยิงรัวตอนราคาเด้งเข้า-ออกแถบ
+var int lastSigBar = -1000
+readyAgain = bar_index - lastSigBar > cooldown
+
+longRaw  = firstTouchLow  and not (muteInTrend and inTrend) and readyAgain
+shortRaw = firstTouchHigh and not (muteInTrend and inTrend) and readyAgain
+
+longSignal  = longRaw
+shortSignal = shortRaw and not longRaw
+if longSignal or shortSignal
+    lastSigBar := bar_index
+
+// ---------- วาด ----------
+pU = plot(upper, "แถบบน",  color = color.new(color.aqua, 20), linewidth = 1)
+pL = plot(lower, "แถบล่าง", color = color.new(color.aqua, 20), linewidth = 1)
+plot(basis, "เส้นกลาง", color = color.new(color.orange, 30), linewidth = 1)
+fill(pU, pL, color = color.new(color.aqua, 94), title = "พื้นในกรอบ")
+
+bgcolor(inTrend ? color.new(color.orange, 88) : na, title = "เตือน: อาจเป็นแนวโน้ม")
+
+plotshape(showSignals and longSignal,  "เข้าซื้อ", shape.triangleup, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny, text = "BUY",  textcolor = color.new(color.teal, 0))
+plotshape(showSignals and shortSignal, "เข้าขาย", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.tiny, text = "SELL", textcolor = color.new(color.red, 0))
+
+// เส้น SL/TP ของสัญญาณล่าสุด — เห็นชัดว่าเป้า 5 pips แคบแค่ไหนเทียบกับ spread
+var float entryPx = na
+var int   dir     = 0
+if longSignal
+    entryPx := close
+    dir     := 1
+if shortSignal
+    entryPx := close
+    dir     := -1
+
+slPx = dir == 1 ? entryPx - slPips * pip : entryPx + slPips * pip
+tpPx = dir == 1 ? entryPx + tpPips * pip : entryPx - tpPips * pip
+
+// วาดเฉพาะสัญญาณล่าสุด แล้วลบของเดิมทิ้ง — ถ้าปล่อยให้ทุกสัญญาณค้างไว้
+// เส้นจะซ้อนกันเป็นขั้นบันไดเต็มจอจนอ่านกราฟไม่ออก
+var line lnEntry = na
+var line lnSL    = na
+var line lnTP    = na
+if showLevels and (longSignal or shortSignal)
+    line.delete(lnEntry)
+    line.delete(lnSL)
+    line.delete(lnTP)
+    lnEntry := line.new(bar_index, entryPx, bar_index + levelBars, entryPx,
+         color = color.new(color.gray, 20), width = 1)
+    lnSL := line.new(bar_index, slPx, bar_index + levelBars, slPx,
+         color = color.new(color.red, 10), width = 1, style = line.style_dashed)
+    lnTP := line.new(bar_index, tpPx, bar_index + levelBars, tpPx,
+         color = color.new(color.teal, 10), width = 1, style = line.style_dashed)
+
+// ---------- ทดสอบผลย้อนหลังแบบหยาบ ----------
+// จำลองว่า "ถ้าเข้าทุกสัญญาณด้วย SL/TP ตามกฎ จะแพ้-ชนะกี่ไม้" บนข้อมูลที่กราฟโหลดมา
+// ข้อจำกัดที่ต้องรู้ ไม่ใช่ backtest ที่เชื่อได้ 100%:
+//   • ถ้าแท่งเดียวกินทั้ง TP และ SL เราไม่รู้ว่าอันไหนโดนก่อน → นับเป็น "แพ้" (worst case)
+//   • เข้าที่ราคาปิดของแท่งที่ให้สัญญาณ ไม่ใช่ราคาที่แตะแถบพอดี
+//   • ไม่คิดค่าคอมมิชชัน swap หรือ slippage (คิดแต่ spread ที่กรอกเอง)
+effTP = (tpPips + spreadPips) * pip   // ต้องวิ่งไกลกว่าเป้าเท่ากับ spread จึงได้กำไรจริง
+effSL = math.max(slPips - spreadPips, 0) * pip   // และโดน SL เร็วขึ้นเท่ากับ spread
+
+var int  nWin    = 0
+var int  nLoss   = 0
+var int  nAmbig  = 0
+var bool simOpen = false
+var int  simDir  = 0
+var float simSL  = na
+var float simTP  = na
+
+if showStats
+    if simOpen
+        hitSL = simDir == 1 ? low  <= simSL : high >= simSL
+        hitTP = simDir == 1 ? high >= simTP : low  <= simTP
+        if hitSL and hitTP
+            nAmbig += 1
+            nLoss  += 1          // แท่งเดียวโดนทั้งคู่ → นับแพ้ไว้ก่อน
+            simOpen := false
+        else if hitSL
+            nLoss += 1
+            simOpen := false
+        else if hitTP
+            nWin += 1
+            simOpen := false
+    if not simOpen and (longSignal or shortSignal)
+        simOpen := true
+        simDir  := longSignal ? 1 : -1
+        simSL   := longSignal ? close - effSL : close + effSL
+        simTP   := longSignal ? close + effTP : close - effTP
+
+nDone   = nWin + nLoss
+winRate = nDone > 0 ? nWin / nDone * 100 : 0.0
+beRate  = slPips > 0 ? 100.0 / (1.0 + tpPips / slPips) : 0.0
+
+if showStats and barstate.islast
+    var table st = table.new(position.bottom_right, 2, 6, border_width = 1)
+    table.cell(st, 0, 0, "ไม้ที่ปิดแล้ว", text_color = color.gray, text_size = size.tiny)
+    table.cell(st, 1, 0, str.tostring(nDone), text_color = chart.fg_color, text_size = size.tiny)
+    table.cell(st, 0, 1, "ชนะ", text_color = color.gray, text_size = size.tiny)
+    table.cell(st, 1, 1, str.tostring(nWin), text_color = color.teal, text_size = size.tiny)
+    table.cell(st, 0, 2, "แพ้", text_color = color.gray, text_size = size.tiny)
+    table.cell(st, 1, 2, str.tostring(nLoss), text_color = color.red, text_size = size.tiny)
+    table.cell(st, 0, 3, "Win rate ที่ทำได้", text_color = color.gray, text_size = size.tiny)
+    table.cell(st, 1, 3, str.tostring(winRate, "#.0") + "%", text_size = size.tiny,
+         text_color = winRate >= beRate ? color.teal : color.red)
+    table.cell(st, 0, 4, "ต้องได้เท่าไรจึงเสมอตัว", text_color = color.gray, text_size = size.tiny)
+    table.cell(st, 1, 4, str.tostring(beRate, "#.0") + "%", text_color = color.orange, text_size = size.tiny)
+    table.cell(st, 0, 5, "แท่งที่โดนทั้ง SL+TP", text_color = color.gray, text_size = size.tiny)
+    table.cell(st, 1, 5, str.tostring(nAmbig), text_color = color.gray, text_size = size.tiny)
+
+// ---------- กล่องสรุป: ให้เห็นว่า pip ที่ใช้จริงคือเท่าไร และ SL/TP กว้างกี่หน่วยราคา ----------
+// จุดนี้พลาดง่ายที่สุด เพราะนิยาม pip ของทอง/คริปโตต่างกันตามโบรกเกอร์
+if showInfo and barstate.islast
+    var table info = table.new(position.top_right, 2, 5, border_width = 1)
+    table.cell(info, 0, 0, "1 pip =",  text_color = color.gray, text_size = size.tiny)
+    table.cell(info, 1, 0, str.tostring(pip), text_color = chart.fg_color, text_size = size.tiny)
+    table.cell(info, 0, 1, "SL " + str.tostring(slPips) + " pips =", text_color = color.gray, text_size = size.tiny)
+    table.cell(info, 1, 1, str.tostring(slPips * pip), text_color = color.red, text_size = size.tiny)
+    table.cell(info, 0, 2, "TP " + str.tostring(tpPips) + " pips =", text_color = color.gray, text_size = size.tiny)
+    table.cell(info, 1, 2, str.tostring(tpPips * pip), text_color = color.teal, text_size = size.tiny)
+    table.cell(info, 0, 3, "Efficiency Ratio", text_color = color.gray, text_size = size.tiny)
+    table.cell(info, 1, 3, str.tostring(er, "#.00") + " / " + str.tostring(erThresh, "#.00"),
+         text_color = chart.fg_color, text_size = size.tiny)
+    table.cell(info, 0, 4, "สภาพตลาด", text_color = color.gray, text_size = size.tiny)
+    table.cell(info, 1, 4, inTrend ? "แนวโน้ม" : "แกว่งตัว", text_size = size.tiny,
+         text_color = inTrend ? color.orange : color.teal)
+
+// ---------- Alert ----------
+// ตั้งเป็น "Once Per Bar Close" เพื่อกันสัญญาณกะพริบระหว่างแท่งยังไม่ปิด
+alertcondition(longSignal,  "Piranha: สัญญาณซื้อ",  "Piranha BUY — ราคาสัมผัสแถบล่าง Bollinger")
+alertcondition(shortSignal, "Piranha: สัญญาณขาย", "Piranha SELL — ราคาสัมผัสแถบบน Bollinger")
+alertcondition(longSignal or shortSignal, "Piranha: สัญญาณใดก็ได้", "Piranha — ราคาสัมผัสแถบ Bollinger")
+alertcondition(inTrend and not inTrend[1], "Piranha: ตลาดเริ่มเป็นแนวโน้ม",
+     "Piranha — ราคาปิดนอกแถบติดกันหลายแท่ง เงื่อนไขตลาดแกว่งตัวอาจไม่จริงแล้ว")

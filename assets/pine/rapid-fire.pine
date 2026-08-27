@@ -1,0 +1,96 @@
+// @version=5
+// ============================================================
+//  Rapid-Fire (กลยุทธ์ที่ 1) — Mario Singh, 17 Proven Currency Trading Strategies
+//  หน้า 198–205 · ใช้บน Time frame M1
+//
+//  กฎจากหนังสือ:
+//    ซื้อ  = ราคาอยู่เหนือ SMA 60  +  Parabolic SAR พลิกมาอยู่ "ใต้" ราคา
+//    ขาย  = ราคาอยู่ใต้ SMA 60    +  Parabolic SAR พลิกมาอยู่ "เหนือ" ราคา
+//    SL 15 pips · TP 10 pips
+//
+//  สคริปต์นี้ "ไม่ได้" สั่งเทรดหรือแนะนำให้เข้าไม้ — มันแค่ระบายสีและปักลูกศร
+//  เฉพาะแท่งที่เงื่อนไขของหนังสือครบทั้ง 2 ข้อ เพื่อให้ตาเราไม่ต้องไล่เช็กเอง
+//
+//  วิธีใช้: TradingView → Pine Editor → วางโค้ดนี้ → Save → Add to chart
+// ============================================================
+indicator("Rapid-Fire (SMA60 + PSAR)", overlay = true)
+
+// ---------- ค่าอินดิเคเตอร์ (ตรงตามหนังสือ) ----------
+smaLen   = input.int(60,    "SMA period",     minval = 1, group = "อินดิเคเตอร์")
+sarStart = input.float(0.02, "SAR Step",      step = 0.001, group = "อินดิเคเตอร์")
+sarInc   = input.float(0.02, "SAR Increment", step = 0.001, group = "อินดิเคเตอร์")
+sarMax   = input.float(0.2,  "SAR Maximum",   step = 0.01,  group = "อินดิเคเตอร์")
+
+// ---------- แผนไม้ (ใช้วาดเส้น SL/TP บนกราฟ) ----------
+slPips   = input.float(15, "Stop Loss (pips)",   minval = 0, group = "แผนไม้")
+tpPips   = input.float(10, "Take Profit (pips)", minval = 0, group = "แผนไม้")
+pipSize  = input.float(0.0, "ขนาด 1 pip (0 = ให้คำนวณเอง)", step = 0.00001, group = "แผนไม้",
+     tooltip = "EURUSD = 0.0001 · คู่ JPY = 0.01 · XAUUSD ส่วนใหญ่ = 0.1 — ยึดค่าจริงจากโบรกเกอร์เสมอ")
+
+showSignals = input.bool(true, "แสดงลูกศรจุดเข้า",   group = "การแสดงผล")
+showBg      = input.bool(true, "ระบายพื้นตามฝั่งเทรด", group = "การแสดงผล")
+showLevels  = input.bool(true, "วาดเส้น SL/TP ของสัญญาณล่าสุด", group = "การแสดงผล")
+
+// ---------- คำนวณ ----------
+sma = ta.sma(close, smaLen)
+sar = ta.sar(sarStart, sarInc, sarMax)
+
+// pip: ถ้าไม่ได้กำหนดเอง ใช้ 10 เท่าของ tick ซึ่งตรงกับนิยาม pip ของ FX ทศนิยม 5 ตำแหน่ง
+// ยกเว้นทอง/เงิน ที่ mintick*10 จะได้ค่าเล็กเกินไป จึงตั้งให้ตรงกับแผ่นสั่งเทรดในแอป
+autoPip = str.contains(syminfo.ticker, "XAU") ? 0.1 :
+          str.contains(syminfo.ticker, "XAG") ? 0.01 : syminfo.mintick * 10
+pip = pipSize > 0 ? pipSize : autoPip
+
+// ฝั่งที่ "อนุญาต" ตามข้อ 1 ของหนังสือ
+bullBias = close > sma
+bearBias = close < sma
+
+// SAR พลิกข้าง (ข้อ 2 + 3): จุดที่ SAR ย้ายมาอยู่ฝั่งตรงข้ามของราคา
+sarBelow = sar < close
+sarAbove = sar > close
+sarFlipUp   = sarBelow and not sarBelow[1]
+sarFlipDown = sarAbove and not sarAbove[1]
+
+// สัญญาณครบเงื่อนไข = ฝั่งถูก + SAR เพิ่งพลิกมาฝั่งเดียวกัน
+longSignal  = bullBias and sarFlipUp
+shortSignal = bearBias and sarFlipDown
+
+// ---------- วาด ----------
+plot(sma, "SMA 60", color = color.new(color.aqua, 0), linewidth = 2)
+plot(sar, "Parabolic SAR", style = plot.style_cross, color = color.new(color.yellow, 0), linewidth = 1)
+
+bgcolor(showBg and bullBias ? color.new(color.teal, 92) : showBg and bearBias ? color.new(color.red, 93) : na)
+
+plotshape(showSignals and longSignal,  "เข้าซื้อ",  shape.triangleup,   location.belowbar,
+     color.new(color.teal, 0), size = size.small, text = "BUY",  textcolor = color.new(color.teal, 0))
+plotshape(showSignals and shortSignal, "เข้าขาย", shape.triangledown, location.abovebar,
+     color.new(color.red, 0),  size = size.small, text = "SELL", textcolor = color.new(color.red, 0))
+
+// เส้น SL/TP ของสัญญาณล่าสุด — ช่วยเห็นว่า 10/15 pips กว้างแค่ไหนจริง ๆ บนกราฟนี้
+var float entryPx = na
+var int   dir     = 0
+if longSignal
+    entryPx := close
+    dir     := 1
+if shortSignal
+    entryPx := close
+    dir     := -1
+
+slPx = dir == 1 ? entryPx - slPips * pip : entryPx + slPips * pip
+tpPx = dir == 1 ? entryPx + tpPips * pip : entryPx - tpPips * pip
+
+plot(showLevels and dir != 0 ? entryPx : na, "ราคาเข้า", color = color.new(color.gray, 30),
+     style = plot.style_linebr, linewidth = 1)
+plot(showLevels and dir != 0 ? slPx : na, "Stop Loss", color = color.new(color.red, 20),
+     style = plot.style_linebr, linewidth = 1)
+plot(showLevels and dir != 0 ? tpPx : na, "Take Profit", color = color.new(color.teal, 20),
+     style = plot.style_linebr, linewidth = 1)
+
+// ---------- Alert ----------
+// สร้าง Alert: กดไอคอนนาฬิกา → Condition เลือกสคริปต์นี้ → เลือกเงื่อนไขด้านล่าง
+alertcondition(longSignal,  "Rapid-Fire: สัญญาณซื้อ",
+     "Rapid-Fire BUY — ราคาเหนือ SMA60 และ SAR พลิกลงใต้ราคา")
+alertcondition(shortSignal, "Rapid-Fire: สัญญาณขาย",
+     "Rapid-Fire SELL — ราคาใต้ SMA60 และ SAR พลิกขึ้นเหนือราคา")
+alertcondition(longSignal or shortSignal, "Rapid-Fire: สัญญาณใดก็ได้",
+     "Rapid-Fire — มีสัญญาณเข้าไม้ตามเงื่อนไข")

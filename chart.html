@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>กราฟ + แผ่นสั่งเทรด</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d1117; --panel: #161b22; --line: #21262d; --line2: #30363d;
+    --fg: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --pos: #3fb950; --neg: #f85149; --warn: #f5a524;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+  .bar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+    padding: .55rem .9rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .bar h1 { font-size: .92rem; margin: 0; font-weight: 600; }
+  .bar .sym { color: var(--warn); font-weight: 700; }
+  .bar .studies { font-size: .76rem; color: var(--muted); }
+  .bar .right { margin-left: auto; display: flex; gap: .4rem; }
+  .bar a, .bar button.ghost { font-size: .78rem; color: var(--accent); text-decoration: none;
+    border: 1px solid var(--line2); padding: .34rem .68rem; border-radius: 8px;
+    background: none; cursor: pointer; font-family: inherit; }
+  .bar a:hover, .bar button.ghost:hover { border-color: var(--accent); }
+
+  #layout { display: flex; height: calc(100% - 49px); align-items: stretch; }
+  #chartCol { flex: 1 1 auto; min-width: 0; }
+  #tv_chart { height: 100%; width: 100%; }
+
+  /* ---------- แผ่นสั่งเทรด ---------- */
+  #ticket { flex: 0 0 320px; border-left: 1px solid var(--line); background: var(--panel);
+    overflow-y: auto; padding: .85rem .9rem 2rem; }
+  #ticket.hidden { display: none; }
+  #ticket h2 { font-size: .85rem; margin: 0 0 .2rem; letter-spacing: .02em; }
+  #ticket .sub { font-size: .72rem; color: var(--muted); margin: 0 0 .8rem; line-height: 1.5; }
+
+  .side { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; margin-bottom: .8rem; }
+  .side button { padding: .5rem; border-radius: 8px; border: 1px solid var(--line2);
+    background: #0d1117; color: var(--muted); font: 600 .82rem inherit; cursor: pointer; }
+  .side button.on[data-side="buy"] { border-color: var(--pos); color: var(--pos); background: #0f2417; }
+  .side button.on[data-side="sell"] { border-color: var(--neg); color: var(--neg); background: #2a1315; }
+
+  .fld { margin-bottom: .55rem; }
+  .fld label { display: block; font-size: .72rem; color: var(--muted); margin-bottom: .2rem; }
+  .fld input, .fld select { width: 100%; padding: .42rem .5rem; border-radius: 7px;
+    border: 1px solid var(--line2); background: #0d1117; color: var(--fg); font: 500 .85rem inherit; }
+  .fld input:focus, .fld select:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
+
+  .sect { border-top: 1px solid var(--line); margin-top: .85rem; padding-top: .75rem; }
+  .sect h3 { font-size: .74rem; color: var(--muted); margin: 0 0 .5rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; }
+
+  .lvl { display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    padding: .45rem .55rem; border-radius: 8px; border: 1px solid var(--line2);
+    background: #0d1117; margin-bottom: .4rem; }
+  .lvl .k { font-size: .72rem; color: var(--muted); }
+  .lvl .v { font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: .95rem; font-weight: 700; }
+  .lvl.sl { border-color: #52262a; } .lvl.sl .v { color: var(--neg); }
+  .lvl.tp { border-color: #1d4a2c; } .lvl.tp .v { color: var(--pos); }
+  .lvl .copy { border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: .7rem; padding: .1rem .3rem; border-radius: 5px; }
+  .lvl .copy:hover { color: var(--accent); background: #1c2128; }
+
+  .lot { text-align: center; padding: .7rem; border-radius: 10px; background: #0d1117;
+    border: 1px solid var(--line2); margin-bottom: .5rem; }
+  .lot .big { font-size: 1.7rem; font-weight: 800; font-family: ui-monospace, Consolas, monospace; }
+  .lot .big small { font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .lot .hint { font-size: .68rem; color: var(--muted); margin: .25rem 0 0; }
+
+  dl.kv { display: grid; grid-template-columns: auto 1fr; gap: .3rem .6rem; margin: 0; font-size: .76rem; }
+  dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; text-align: right; font-weight: 600; }
+  .pos { color: var(--pos); } .neg { color: var(--neg); }
+
+  .warnbox { font-size: .72rem; line-height: 1.55; color: var(--warn); background: #2a2010;
+    border: 1px solid #4d3c14; border-radius: 8px; padding: .5rem .6rem; margin-top: .6rem; }
+  .chk { font-size: .74rem; line-height: 1.5; }
+  .chk label { display: flex; gap: .45rem; align-items: flex-start; padding: .25rem 0;
+    color: var(--muted); cursor: pointer; }
+  .chk input { margin-top: .18rem; flex: none; accent-color: var(--accent); }
+  .chk label.done { color: var(--fg); text-decoration: line-through; text-decoration-color: var(--line2); }
+
+  .disc { font-size: .66rem; color: var(--muted); line-height: 1.55; margin-top: 1rem;
+    border-top: 1px solid var(--line); padding-top: .6rem; }
+  .fallback { padding: 1.2rem; font-size: .9rem; line-height: 1.6; color: var(--muted); }
+  .fallback b { color: var(--fg); }
+
+  @media (max-width: 860px) {
+    #layout { flex-direction: column; }
+    #chartCol { flex: 1 1 55%; min-height: 300px; }
+    #ticket { flex: 1 1 45%; border-left: none; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1>กราฟ <span class="sym" id="symLabel">—</span> · <span id="tfLabel">M1</span></h1>
+  <span class="studies" id="studiesLabel"></span>
+  <div class="right">
+    <button class="ghost" id="pineBtn" hidden>คัดลอก Pine Script</button>
+    <button class="ghost" id="toggleTicket">ซ่อนแผ่นสั่งเทรด</button>
+    <a id="openTv" href="#" target="_blank" rel="noopener">เปิดใน TradingView ↗</a>
+  </div>
+</div>
+
+<div id="layout">
+  <div id="chartCol"><div id="tv_chart"></div></div>
+
+  <aside id="ticket">
+    <h2 id="tkTitle">แผ่นสั่งเทรด</h2>
+    <p class="sub" id="tkSub">ใส่ราคาที่จะเข้า แล้วระบบคำนวณราคา SL / TP และขนาดไม้ให้</p>
+
+    <div class="side">
+      <button data-side="buy" class="on">ซื้อ (Long)</button>
+      <button data-side="sell">ขาย (Short)</button>
+    </div>
+
+    <div class="fld">
+      <label>ราคาที่จะเข้า (อ่านจากกราฟด้านซ้าย)</label>
+      <input type="number" id="fEntry" step="any" placeholder="เช่น 4615.38">
+    </div>
+
+    <div class="fld">
+      <label>ระบุ SL / TP เป็นหน่วย</label>
+      <select id="fUnit">
+        <option value="pips">pips</option>
+        <option value="price">ราคา (เช่น ทองขยับกี่เหรียญ)</option>
+      </select>
+    </div>
+
+    <div class="row2">
+      <div class="fld"><label>SL <span class="u">(pips)</span></label><input type="number" id="fSL" step="any"></div>
+      <div class="fld"><label>TP <span class="u">(pips)</span></label><input type="number" id="fTP" step="any"></div>
+    </div>
+
+    <div class="fld">
+      <label>ขนาด 1 pip ของสินทรัพย์นี้</label>
+      <input type="number" id="fPipSize" step="any">
+    </div>
+
+    <div class="row2">
+      <div class="fld"><label>ทุน (USD)</label><input type="number" id="fBalance" step="any"></div>
+      <div class="fld"><label>เสี่ยงต่อไม้ (%)</label><input type="number" id="fRisk" step="any"></div>
+    </div>
+
+    <div class="fld">
+      <label>มูลค่า 1 pip ต่อ 1.0 lot (USD)</label>
+      <input type="number" id="fPipValue" step="any">
+    </div>
+
+    <div class="sect">
+      <h3>ราคาที่ต้องตั้ง</h3>
+      <div class="lvl"><span class="k">เข้า</span><span class="v" id="oEntry">—</span>
+        <button class="copy" data-copy="oEntry">คัดลอก</button></div>
+      <div class="lvl sl"><span class="k">Stop Loss</span><span class="v" id="oSL">—</span>
+        <button class="copy" data-copy="oSL">คัดลอก</button></div>
+      <div class="lvl tp"><span class="k">Take Profit</span><span class="v" id="oTP">—</span>
+        <button class="copy" data-copy="oTP">คัดลอก</button></div>
+    </div>
+
+    <div class="sect">
+      <h3>ขนาดไม้</h3>
+      <div class="lot">
+        <div class="big" id="oLots">—<small> lot</small></div>
+        <p class="hint" id="oLotsHint"></p>
+      </div>
+      <dl class="kv">
+        <dt>ถ้าโดน SL</dt><dd class="neg" id="oRiskAmt">—</dd>
+        <dt>ถ้าถึง TP</dt><dd class="pos" id="oRewardAmt">—</dd>
+        <dt>Risk : Reward</dt><dd id="oRR">—</dd>
+        <dt>Win rate ที่ต้องมีเพื่อเสมอตัว</dt><dd id="oBE">—</dd>
+      </dl>
+      <dl class="kv" style="margin-top:.5rem">
+        <dt>ระยะ SL / TP เป็นราคา</dt><dd id="oDist">—</dd>
+        <dt>ราคาขยับ 1 หน่วย ต่อ 0.01 lot</dt><dd id="oUnit001">—</dd>
+        <dt>ราคาขยับ 1 หน่วย ต่อไม้นี้</dt><dd id="oUnitLot">—</dd>
+      </dl>
+      <div class="warnbox" id="oWarn" hidden></div>
+    </div>
+
+    <div class="sect" id="chkSect" hidden>
+      <h3>เช็กลิสต์ก่อนเข้าไม้</h3>
+      <div class="chk" id="chkList"></div>
+    </div>
+
+    <p class="disc">เครื่องมือคำนวณเพื่อการศึกษา ไม่ใช่คำแนะนำการลงทุน · ค่า pip และมูลค่าต่อ pip
+      ต่างกันตามโบรกเกอร์ ยึดค่าจริงจากแพลตฟอร์มที่เทรดเสมอ ก่อนส่งคำสั่งจริงให้ตรวจตัวเลขซ้ำทุกครั้ง</p>
+  </aside>
+</div>
+
+<script src="assets/js/strategies.js?v=13"></script>
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (s) { return document.querySelector(s); };
+  var num = function (v) { var n = parseFloat(v); return isFinite(n) ? n : 0; };
+  var q = new URLSearchParams(location.search);
+
+  /* ---------- หาสินทรัพย์ / กลยุทธ์ ---------- */
+  var strat = null;
+  if (typeof STRATEGIES !== "undefined" && q.get("sid")) {
+    strat = STRATEGIES.find(function (s) { return s.id === +q.get("sid"); }) || null;
+  }
+  var symbol   = q.get("symbol") || "OANDA:XAUUSD";
+  var bare     = symbol.replace(/^[A-Z]+:/, "");
+  var interval = q.get("interval") || (strat ? tfInterval(strat.timeframe) : "1");
+  var studies  = [];
+  if (strat && strat.tvStudies) studies = strat.tvStudies;
+  else { try { studies = JSON.parse(q.get("studies") || "[]"); } catch (e) { studies = []; } }
+
+  function tfInterval(tf) {
+    var map = { M1: "1", M5: "5", M15: "15", M30: "30", H1: "60", H4: "240", D1: "1D", W1: "1W" };
+    return map[(String(tf).match(/[MHDW]\d+/) || [])[0]] || "60";
+  }
+
+  /* ---------- ขนาด pip + มูลค่าต่อ pip ตามสินทรัพย์ ----------
+     ค่าเหล่านี้เป็นค่าที่พบบ่อย ไม่ใช่ค่าสากล — ผู้ใช้แก้ได้ในช่องกรอก */
+  var PIP = {
+    XAUUSD: { size: 0.1,   value: 10 },  // 1 lot = 100 oz → 0.1 USD/oz = 10 USD
+    XAGUSD: { size: 0.01,  value: 50 },
+    BTCUSD: { size: 1,     value: 1  },
+    ETHUSD: { size: 0.1,   value: 1  },
+    DXY:    { size: 0.01,  value: 10 },
+    WTI:    { size: 0.01,  value: 10 },
+    BRENT:  { size: 0.01,  value: 10 },
+    USOIL:  { size: 0.01,  value: 10 }
+  };
+  function pipFor(code) {
+    if (PIP[code]) return PIP[code];
+    if (/JPY$/.test(code)) return { size: 0.01, value: 10 };
+    if (/^[A-Z]{6}$/.test(code)) return { size: 0.0001, value: 10 };
+    return { size: 0.0001, value: 10 };
+  }
+  function decimalsFor(pipSize) {
+    var s = String(pipSize);
+    var d = s.indexOf(".") >= 0 ? s.length - s.indexOf(".") - 1 : 0;
+    return Math.min(d + 1, 8);   // +1 หลัก เผื่อ fractional pip
+  }
+
+  /* ---------- หัวหน้าจอ ---------- */
+  $("#symLabel").textContent = bare;
+  var tfName = { "1":"M1","5":"M5","15":"M15","30":"M30","60":"H1","240":"H4","1D":"D1","1W":"W1" };
+  $("#tfLabel").textContent = tfName[interval] || interval;
+  $("#openTv").href = "https://www.tradingview.com/chart/?symbol=" +
+    encodeURIComponent(symbol) + "&interval=" + interval;
+
+  var overrides = {}, labels = [];
+  studies.forEach(function (s) {
+    if (!s || !s.id) return;
+    if (s.inputs) Object.keys(s.inputs).forEach(function (k) { overrides[s.id + "." + k] = s.inputs[k]; });
+    if (s.label) labels.push(s.label);
+  });
+  $("#studiesLabel").textContent = labels.join("  ·  ");
+
+  if (strat) {
+    $("#tkTitle").textContent = "แผ่นสั่งเทรด · " + strat.name;
+    var pl = strat.plan || {};
+    $("#tkSub").textContent = pl.note ? pl.note
+      : (pl.slPips ? "ค่า SL/TP ตั้งตามกฎของกลยุทธ์นี้แล้ว — ใส่ราคาที่จะเข้าเพื่อดูราคาจริงและขนาดไม้"
+                   : "ใส่ราคาที่จะเข้า แล้วระบบคำนวณราคา SL / TP และขนาดไม้ให้");
+  }
+
+  /* ---------- กราฟ ---------- */
+  if (typeof TradingView === "undefined") {
+    $("#chartCol").innerHTML = '<div class="fallback">โหลดกราฟ TradingView ไม่สำเร็จ (ต้องต่ออินเทอร์เน็ต) — ' +
+      'กด <b>เปิดใน TradingView</b> ด้านบนแล้วเพิ่มอินดิเคเตอร์เอง:<br>' +
+      labels.map(function (l) { return "• " + l; }).join("<br>") + "</div>";
+  } else {
+    new TradingView.widget({
+      container_id: "tv_chart", symbol: symbol, interval: interval,
+      autosize: true, theme: "dark", style: "1", locale: "th", timezone: "Asia/Bangkok",
+      hide_side_toolbar: false, allow_symbol_change: true,
+      studies: studies.map(function (s) { return s.inputs ? { id: s.id, inputs: s.inputs } : s.id; }),
+      studies_overrides: overrides
+    });
+  }
+
+  /* ---------- ค่าเริ่มต้นของแผ่นสั่งเทรด ---------- */
+  var pip = pipFor(bare);
+  var calc = {};
+  try { calc = JSON.parse(localStorage.getItem("fx_calc_v1")) || {}; } catch (e) { calc = {}; }
+
+  /* กลยุทธ์แบ่งเป็น 2 แบบ:
+     (ก) หนังสือให้ pip คงที่  → เติม SL/TP ให้เลย
+     (ข) หนังสือให้แค่อัตราส่วน → SL ขึ้นกับโครงสร้างราคา ผู้ใช้ต้องวัดเอง
+          เราจึงคำนวณ TP จาก RR ให้อัตโนมัติเมื่อผู้ใช้กรอก SL */
+  var planRR = strat && strat.plan && strat.plan.rr ? strat.plan.rr : 0;
+  var fixedPlan = !!(strat && strat.plan && strat.plan.slPips);
+
+  $("#fSL").value = fixedPlan ? strat.plan.slPips : (calc.cSL || 20);
+  $("#fTP").value = fixedPlan ? strat.plan.tpPips
+                  : (planRR ? (calc.cSL || 20) * planRR : 20);
+  $("#fPipSize").value  = pip.size;
+  $("#fPipValue").value = pip.value;
+  $("#fBalance").value  = calc.cBalance != null ? calc.cBalance : 1000;
+  $("#fRisk").value     = calc.cRisk != null ? calc.cRisk : 1;
+
+  var side = "buy";
+  document.querySelectorAll(".side button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      side = b.dataset.side;
+      document.querySelectorAll(".side button").forEach(function (x) { x.classList.toggle("on", x === b); });
+      render();
+    });
+  });
+
+  /* ---------- คำนวณ ---------- */
+  function render() {
+    var entry = num($("#fEntry").value);
+    var slIn = num($("#fSL").value), tpIn = num($("#fTP").value);
+    var ps = num($("#fPipSize").value), pv = num($("#fPipValue").value);
+    var bal = num($("#fBalance").value), risk = num($("#fRisk").value);
+    var dec = decimalsFor(ps);
+    var dir = side === "buy" ? 1 : -1;
+    var unit = $("#fUnit").value;
+
+    /* คิดทุกอย่างเป็น "ระยะราคา" ตรงกลาง แล้วค่อยแปลงกลับ
+       ทำให้หน่วย pips กับหน่วยราคาให้ผลตรงกันเสมอ */
+    var slDist = unit === "price" ? slIn : slIn * ps;   // SL กี่หน่วยราคา
+    var tpDist = unit === "price" ? tpIn : tpIn * ps;   // TP กี่หน่วยราคา
+    var valPerPrice = ps > 0 ? pv / ps : 0;             // ราคาขยับ 1 หน่วย = กี่ USD ต่อ 1.0 lot
+
+    if (entry > 0) {
+      $("#oEntry").textContent = entry.toFixed(dec);
+      $("#oSL").textContent = (entry - dir * slDist).toFixed(dec);
+      $("#oTP").textContent = (entry + dir * tpDist).toFixed(dec);
+    } else {
+      $("#oEntry").textContent = $("#oSL").textContent = $("#oTP").textContent = "—";
+    }
+
+    var riskAmt = bal * risk / 100;
+    var lots = slDist > 0 && valPerPrice > 0 ? riskAmt / (slDist * valPerPrice) : 0;
+    var reward = tpDist > 0 && slDist > 0 ? riskAmt * (tpDist / slDist) : 0;
+
+    $("#oDist").textContent = slDist > 0
+      ? "-" + slDist.toFixed(dec) + " / +" + tpDist.toFixed(dec)
+      : "—";
+    $("#oUnit001").textContent = valPerPrice > 0 ? (valPerPrice * 0.01).toFixed(2) + " USD" : "—";
+    $("#oUnitLot").textContent = valPerPrice > 0 && lots > 0
+      ? (valPerPrice * lots).toFixed(2) + " USD" : "—";
+
+    $("#oLots").innerHTML = (lots > 0 ? lots.toFixed(2) : "—") + "<small> lot</small>";
+    $("#oLotsHint").textContent = lots > 0
+      ? "≈ " + (lots * 10).toFixed(1) + " mini lot · " + (lots * 100).toFixed(0) + " micro lot"
+      : "กรอกทุนและ SL เพื่อคำนวณ";
+    $("#oRiskAmt").textContent = "-" + riskAmt.toFixed(2) + " USD";
+    $("#oRewardAmt").textContent = "+" + reward.toFixed(2) + " USD";
+
+    var rr = slDist > 0 ? tpDist / slDist : 0;
+    $("#oRR").textContent = rr > 0 ? "1 : " + rr.toFixed(2) : "—";
+    $("#oBE").textContent = rr > 0 ? (100 / (1 + rr)).toFixed(1) + "%" : "—";
+
+    var un = unit === "price" ? "" : " pips";
+    var w = $("#oWarn");
+    if (rr > 0 && rr < 1) {
+      w.hidden = false;
+      w.textContent = "TP (" + tpIn + un + ") เล็กกว่า SL (" + slIn + un + ") — ต้องชนะเกิน " +
+        (100 / (1 + rr)).toFixed(1) + "% ของไม้จึงจะเสมอตัว ยังไม่รวมค่า spread และค่าคอมมิชชัน";
+    } else { w.hidden = true; }
+
+    try {
+      localStorage.setItem("fx_calc_v1", JSON.stringify(Object.assign({}, calc, {
+        cBalance: $("#fBalance").value, cRisk: $("#fRisk").value
+      })));
+    } catch (e) {}
+  }
+
+  ["fEntry","fSL","fTP","fPipSize","fPipValue","fBalance","fRisk"].forEach(function (id) {
+    $("#" + id).addEventListener("input", render);
+  });
+
+  /* กลยุทธ์แบบ (ข): แก้ SL แล้วเลื่อน TP ตามอัตราส่วนที่หนังสือกำหนดให้อัตโนมัติ
+     หยุดทำทันทีที่ผู้ใช้แก้ TP เอง เพื่อไม่ให้เขียนทับค่าที่ตั้งใจใส่ */
+  var tpTouched = false;
+  $("#fTP").addEventListener("input", function () { tpTouched = true; });
+  if (planRR && !fixedPlan) {
+    $("#fSL").addEventListener("input", function () {
+      if (tpTouched) return;
+      $("#fTP").value = +(num(this.value) * planRR).toFixed(8);
+      render();
+    });
+  }
+
+  /* สลับหน่วยแล้วแปลงตัวเลขในช่องให้เท่าเดิม — ไม่ให้ระยะ SL/TP เปลี่ยนไปเงียบ ๆ */
+  $("#fUnit").addEventListener("change", function () {
+    var ps = num($("#fPipSize").value) || 1;
+    var toPrice = this.value === "price";
+    ["fSL", "fTP"].forEach(function (id) {
+      var v = num($("#" + id).value);
+      $("#" + id).value = toPrice ? +(v * ps).toFixed(8) : +(v / ps).toFixed(8);
+    });
+    document.querySelectorAll(".fld .u").forEach(function (s) {
+      s.textContent = toPrice ? "(ราคา)" : "(pips)";
+    });
+    render();
+  });
+  render();
+
+  /* ---------- คัดลอกราคา ---------- */
+  document.querySelectorAll(".copy").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var t = $("#" + b.dataset.copy).textContent;
+      if (t === "—") return;
+      navigator.clipboard.writeText(t).then(function () {
+        var old = b.textContent; b.textContent = "คัดลอกแล้ว";
+        setTimeout(function () { b.textContent = old; }, 1200);
+      }).catch(function () {});
+    });
+  });
+
+  /* ---------- เช็กลิสต์ (ใช้ค่าที่ติ๊กร่วมกับหน้า playbook) ---------- */
+  if (strat && strat.checklist) {
+    var checks = {};
+    try { checks = JSON.parse(localStorage.getItem("fx_checks_v1")) || {}; } catch (e) { checks = {}; }
+    var done = checks[strat.id] || [];
+    $("#chkSect").hidden = false;
+    $("#chkList").innerHTML = strat.checklist.map(function (t, i) {
+      return '<label class="' + (done[i] ? "done" : "") + '"><input type="checkbox" data-i="' + i + '"' +
+        (done[i] ? " checked" : "") + "><span></span></label>";
+    }).join("");
+    // ใส่ข้อความแบบ textContent กัน HTML แปลกปลอม
+    $("#chkList").querySelectorAll("label span").forEach(function (sp, i) {
+      sp.textContent = strat.checklist[i];
+    });
+    $("#chkList").addEventListener("change", function (e) {
+      if (e.target.type !== "checkbox") return;
+      done[+e.target.dataset.i] = e.target.checked;
+      e.target.parentElement.classList.toggle("done", e.target.checked);
+      checks[strat.id] = done;
+      try { localStorage.setItem("fx_checks_v1", JSON.stringify(checks)); } catch (err) {}
+    });
+  }
+
+  /* ---------- ปุ่มคัดลอก Pine Script ---------- */
+  if (strat && strat.pineFile) {
+    var pb = $("#pineBtn");
+    pb.hidden = false;
+    pb.addEventListener("click", function () {
+      fetch(strat.pineFile).then(function (r) { return r.text(); }).then(function (code) {
+        return navigator.clipboard.writeText(code);
+      }).then(function () {
+        pb.textContent = "คัดลอกแล้ว → วางใน Pine Editor";
+        setTimeout(function () { pb.textContent = "คัดลอก Pine Script"; }, 2600);
+      }).catch(function () {
+        window.open(strat.pineFile, "_blank", "noopener");
+      });
+    });
+  }
+
+  /* ---------- ซ่อน/แสดงแผ่นสั่งเทรด ---------- */
+  $("#toggleTicket").addEventListener("click", function () {
+    var t = $("#ticket"), hid = t.classList.toggle("hidden");
+    this.textContent = hid ? "แสดงแผ่นสั่งเทรด" : "ซ่อนแผ่นสั่งเทรด";
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forex Playbook — 17 กลยุทธ์</title>
+<link rel="stylesheet" href="assets/css/style.css?v=13">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">FX</span>
+    <div>
+      <h1>Forex Playbook</h1>
+      <p class="sub">17 กลยุทธ์ · Mario Singh · เครื่องมือช่วยจัดระเบียบระบบเทรด</p>
+    </div>
+  </div>
+  <div class="clock" id="clock">
+    <span class="clock-time" id="clockTime">--:--:--</span>
+    <span class="clock-label">เวลาไทย</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="playbook">กลยุทธ์</button>
+  <button class="tab" data-tab="sessions">เซสชัน</button>
+  <button class="tab" data-tab="calc">คำนวณขนาดไม้</button>
+  <button class="tab" data-tab="journal">Journal</button>
+  <button class="tab" data-tab="stats">สถิติ</button>
+</nav>
+
+<main>
+
+<!-- ============ PLAYBOOK ============ -->
+<section id="tab-playbook" class="panel active">
+  <div class="filters">
+    <input type="search" id="search" placeholder="ค้นหาชื่อกลยุทธ์ / คู่เงิน / อินดิเคเตอร์…">
+    <div class="chips" id="styleChips"></div>
+    <label class="toggle"><input type="checkbox" id="sessionOnly"> เฉพาะที่ใช้ได้ตอนนี้</label>
+  </div>
+  <p class="count" id="count"></p>
+  <div class="grid" id="cards"></div>
+</section>
+
+<!-- ============ SESSIONS ============ -->
+<section id="tab-sessions" class="panel">
+  <h2>เซสชันตลาด (เวลาไทย · ปรับ DST อัตโนมัติ)</h2>
+  <div class="session-grid" id="sessionGrid"></div>
+  <div class="note">
+    <strong>อ่านตารางนี้ยังไง</strong>
+    <p>เวลาแสดงเป็นเวลาไทย (UTC+7) คำนวณจากเวลาเปิด-ปิดจริงของแต่ละเมือง จึงเลื่อนตาม DST ให้เอง
+    ช่วง <em>London + New York ทับกัน</em> คือช่วงผันผวนสูงสุดของวัน เหมาะกับ Rapid-Fire, Fade/Trade the Break และการเทรดข่าว</p>
+  </div>
+</section>
+
+<!-- ============ CALCULATOR ============ -->
+<section id="tab-calc" class="panel">
+  <h2>คำนวณขนาดไม้ตามความเสี่ยง</h2>
+  <div class="calc-wrap">
+    <form id="calcForm" class="card form">
+      <label>เงินทุนในพอร์ต
+        <input type="number" id="cBalance" value="1000" min="0" step="any"> <span class="unit">USD</span>
+      </label>
+      <label>ความเสี่ยงต่อไม้
+        <input type="number" id="cRisk" value="1" min="0" max="100" step="any"> <span class="unit">%</span>
+      </label>
+      <label>ระยะ Stop Loss
+        <input type="number" id="cSL" value="20" min="0" step="any"> <span class="unit">pips</span>
+      </label>
+      <label>มูลค่าต่อ 1 pip ต่อ 1.0 lot
+        <input type="number" id="cPipValue" value="10" min="0" step="any"> <span class="unit">USD</span>
+      </label>
+      <label>อัตราส่วน RR เป้าหมาย
+        <input type="number" id="cRR" value="2" min="0" step="any"> <span class="unit">: 1</span>
+      </label>
+      <p class="hint">XAUUSD ทองคำ ~1 USD/pip ต่อ 0.01 lot (100 oz), BTCUSD คิดเป็น USD ต่อจุดตามสัญญาโบรกเกอร์ ส่วนคู่ที่ลงท้าย USD (EURUSD ฯลฯ) ใช้ 10 USD/pip ต่อ 1 lot — ยึดค่าจริงจากแพลตฟอร์มเสมอ</p>
+    </form>
+    <div class="card result" id="calcResult"></div>
+  </div>
+</section>
+
+<!-- ============ JOURNAL ============ -->
+<section id="tab-journal" class="panel">
+  <h2>บันทึกการเทรด</h2>
+  <form id="tradeForm" class="card form journal-form">
+    <label>วันที่<input type="date" id="jDate" required></label>
+    <label>กลยุทธ์<select id="jStrategy" required></select></label>
+    <label>คู่เงิน<input type="text" id="jPair" placeholder="XAUUSD" required></label>
+    <label>ทิศทาง<select id="jSide"><option value="buy">Buy</option><option value="sell">Sell</option></select></label>
+    <label>ผลลัพธ์<select id="jResult">
+      <option value="win">กำไร</option><option value="loss">ขาดทุน</option><option value="be">เสมอ</option></select></label>
+    <label>Pips<input type="number" id="jPips" step="any" placeholder="เช่น 25 หรือ -12"></label>
+    <label>กำไร/ขาดทุน<input type="number" id="jPnl" step="any" placeholder="USD"></label>
+    <label>RR ที่ได้<input type="number" id="jRR" step="any" placeholder="เช่น 1.8"></label>
+    <label class="wide">ทำตามแผนไหม
+      <select id="jRules"><option value="yes">ทำตามกฎครบ</option><option value="no">แหกกฎ</option></select></label>
+    <label class="wide">โน้ต<textarea id="jNote" rows="2" placeholder="เหตุผลที่เข้า / บทเรียน"></textarea></label>
+    <div class="wide actions">
+      <button type="submit" class="btn primary">บันทึก</button>
+      <button type="button" class="btn" id="exportBtn">ส่งออก JSON</button>
+      <label class="btn file">นำเข้า JSON<input type="file" id="importFile" accept="application/json" hidden></label>
+    </div>
+  </form>
+  <div class="table-wrap">
+    <table id="tradeTable">
+      <thead><tr>
+        <th>วันที่</th><th>กลยุทธ์</th><th>คู่เงิน</th><th>ทิศ</th><th>ผล</th>
+        <th class="num">Pips</th><th class="num">P/L</th><th>กฎ</th><th>โน้ต</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty" id="tradeEmpty">ยังไม่มีบันทึก</p>
+  </div>
+</section>
+
+<!-- ============ STATS ============ -->
+<section id="tab-stats" class="panel">
+  <h2>สถิติรายกลยุทธ์</h2>
+  <div class="kpis" id="kpis"></div>
+  <div class="table-wrap">
+    <table id="statTable">
+      <thead><tr>
+        <th>กลยุทธ์</th><th class="num">ไม้</th><th class="num">ชนะ</th><th class="num">Win rate</th>
+        <th class="num">Pips รวม</th><th class="num">P/L รวม</th><th class="num">เฉลี่ย/ไม้</th><th class="num">ทำตามกฎ</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty" id="statEmpty">ยังไม่มีข้อมูลพอจะสรุป</p>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ DETAIL DRAWER ============ -->
+<div class="drawer-backdrop" id="backdrop" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="รายละเอียดกลยุทธ์">
+  <button class="drawer-close" id="drawerClose" aria-label="ปิด">&times;</button>
+  <div id="drawerBody"></div>
+</aside>
+
+<footer>
+  <p>เครื่องมือช่วยจัดระเบียบระบบเทรดเพื่อการศึกษา · ไม่ใช่คำแนะนำการลงทุน · ข้อมูลทั้งหมดเก็บในเครื่องคุณเท่านั้น (localStorage)</p>
+</footer>
+
+<script src="assets/js/strategies.js?v=13"></script>
+<script src="assets/js/app.js?v=13"></script>
+</body>
+</html>
