@@ -125,24 +125,11 @@
       <input type="number" id="fEntry" step="any" placeholder="เช่น 4615.38">
     </div>
 
-    <div class="fld">
-      <label>ระบุ SL / TP เป็นหน่วย</label>
-      <select id="fUnit">
-        <option value="price" selected>ระยะห่างจากราคาเข้า เป็นราคา (เช่น ห่าง 25 เหรียญ)</option>
-        <option value="level">ราคาจริงของ SL/TP (เช่น ตั้ง SL ที่ 4575)</option>
-        <option value="pips">ระยะห่างจากราคาเข้า เป็น pips</option>
-      </select>
-    </div>
-
     <div class="row2">
-      <div class="fld"><label>SL <span class="u">(ระยะห่าง)</span></label><input type="number" id="fSL" step="any"></div>
-      <div class="fld"><label>TP <span class="u">(ระยะห่าง)</span></label><input type="number" id="fTP" step="any"></div>
+      <div class="fld"><label>ราคา Stop Loss</label><input type="number" id="fSL" step="any"></div>
+      <div class="fld"><label>ราคา Take Profit</label><input type="number" id="fTP" step="any"></div>
     </div>
-
-    <div class="fld">
-      <label>ขนาด 1 pip ของสินทรัพย์นี้</label>
-      <input type="number" id="fPipSize" step="any">
-    </div>
+    <p class="hint" id="slTpHint" style="font-size:.68rem;color:var(--muted);margin:-.3rem 0 .55rem;"></p>
 
     <div class="row2">
       <div class="fld"><label>ทุน (USD)</label><input type="number" id="fBalance" step="any"></div>
@@ -150,8 +137,8 @@
     </div>
 
     <div class="fld">
-      <label>มูลค่า 1 pip ต่อ 1.0 lot (USD)</label>
-      <input type="number" id="fPipValue" step="any">
+      <label>ราคาขยับ 1.0 หน่วย มีมูลค่ากี่ USD ต่อ 1.0 lot</label>
+      <input type="number" id="fUnitValue" step="any">
     </div>
 
     <div class="sect">
@@ -294,21 +281,38 @@
   var planRR = strat && strat.plan && strat.plan.rr ? strat.plan.rr : 0;
   var fixedPlan = !!(strat && strat.plan && strat.plan.slPips);
 
+  /* pip.size ใช้ภายในเท่านั้น (ปัดทศนิยมของราคา + แปลงค่าเริ่มต้นของกลยุทธ์ที่หนังสือให้เป็น pips
+     มาเป็นระยะราคาแนะนำ) — ผู้ใช้ไม่ต้องยุ่งกับ pip อีกต่อไป กรอกแค่ราคาเข้า/SL/TP ตรง ๆ */
+  var dec = decimalsFor(pip.size);
   var slPipsDefault = fixedPlan ? strat.plan.slPips : (calc.cSL || 20);
   var tpPipsDefault = fixedPlan ? strat.plan.tpPips
                     : (planRR ? (calc.cSL || 20) * planRR : 20);
-  $("#fSL").value = +(slPipsDefault * pip.size).toFixed(8);
-  $("#fTP").value = +(tpPipsDefault * pip.size).toFixed(8);
-  $("#fPipSize").value  = pip.size;
-  $("#fPipValue").value = pip.value;
+  var slDistDefault = slPipsDefault * pip.size;   // ระยะ SL แนะนำ เป็นหน่วยราคา
+  var tpDistDefault = tpPipsDefault * pip.size;   // ระยะ TP แนะนำ เป็นหน่วยราคา
+  $("#slTpHint").textContent = "ค่าเริ่มต้นจากกลยุทธ์: ห่าง " + slDistDefault.toFixed(dec) +
+    " / " + tpDistDefault.toFixed(dec) + " จากราคาเข้า — พิมพ์ราคาเข้าแล้วจะเติมให้อัตโนมัติ (แก้ตรงนี้เองได้เสมอ)";
+
+  $("#fUnitValue").value = +(pip.value / pip.size).toFixed(8);
   $("#fBalance").value  = calc.cBalance != null ? calc.cBalance : 1000;
   $("#fRisk").value     = calc.cRisk != null ? calc.cRisk : 1;
 
   var side = "buy";
+  var slTouched = false, tpTouched = false;
+
+  /* เติม SL/TP อัตโนมัติจากราคาเข้า ตราบใดที่ผู้ใช้ยังไม่ได้แก้ช่องนั้นเอง */
+  function autofillLevels() {
+    var entry = num($("#fEntry").value);
+    if (entry <= 0) return;
+    var dir = side === "buy" ? 1 : -1;
+    if (!slTouched) $("#fSL").value = (entry - dir * slDistDefault).toFixed(dec);
+    if (!tpTouched) $("#fTP").value = (entry + dir * tpDistDefault).toFixed(dec);
+  }
+
   document.querySelectorAll(".side button").forEach(function (b) {
     b.addEventListener("click", function () {
       side = b.dataset.side;
       document.querySelectorAll(".side button").forEach(function (x) { x.classList.toggle("on", x === b); });
+      autofillLevels();
       render();
     });
   });
@@ -316,47 +320,38 @@
   /* ---------- คำนวณ ---------- */
   function render() {
     var entry = num($("#fEntry").value);
-    var slIn = num($("#fSL").value), tpIn = num($("#fTP").value);
-    var ps = num($("#fPipSize").value), pv = num($("#fPipValue").value);
+    var slPrice = num($("#fSL").value), tpPrice = num($("#fTP").value);
+    var unitValue = num($("#fUnitValue").value);
     var bal = num($("#fBalance").value), risk = num($("#fRisk").value);
-    var dec = decimalsFor(ps);
     var dir = side === "buy" ? 1 : -1;
-    var unit = $("#fUnit").value;
 
-    /* คิดทุกอย่างเป็น "ระยะราคา" ตรงกลาง แล้วค่อยแปลงกลับ
-       ทำให้หน่วย pips / ราคา / ราคาจริง ให้ผลตรงกันเสมอ
-       โหมด "level" ผู้ใช้กรอกราคา SL/TP จริง ๆ — ต้องมีราคาเข้าก่อนถึงจะรู้ระยะ */
-    var slDist = unit === "pips" ? slIn * ps
-               : unit === "level" ? (entry > 0 ? dir * (entry - slIn) : 0)
-               : slIn;                                 // SL กี่หน่วยราคา
-    var tpDist = unit === "pips" ? tpIn * ps
-               : unit === "level" ? (entry > 0 ? dir * (tpIn - entry) : 0)
-               : tpIn;                                 // TP กี่หน่วยราคา
-    var valPerPrice = ps > 0 ? pv / ps : 0;             // ราคาขยับ 1 หน่วย = กี่ USD ต่อ 1.0 lot
+    /* ระยะ SL/TP วัดจากราคาจริงที่กรอก เทียบกับราคาเข้า — ไม่ต้องแปลงหน่วยอะไรอีก */
+    var slDist = entry > 0 ? dir * (entry - slPrice) : 0;
+    var tpDist = entry > 0 ? dir * (tpPrice - entry) : 0;
 
     if (entry > 0) {
       $("#oEntry").textContent = entry.toFixed(dec);
-      $("#oSL").textContent = (entry - dir * slDist).toFixed(dec);
-      $("#oTP").textContent = (entry + dir * tpDist).toFixed(dec);
+      $("#oSL").textContent = slPrice.toFixed(dec);
+      $("#oTP").textContent = tpPrice.toFixed(dec);
     } else {
       $("#oEntry").textContent = $("#oSL").textContent = $("#oTP").textContent = "—";
     }
 
     var riskAmt = bal * risk / 100;
-    var lots = slDist > 0 && valPerPrice > 0 ? riskAmt / (slDist * valPerPrice) : 0;
+    var lots = slDist > 0 && unitValue > 0 ? riskAmt / (slDist * unitValue) : 0;
     var reward = tpDist > 0 && slDist > 0 ? riskAmt * (tpDist / slDist) : 0;
 
     $("#oDist").textContent = slDist > 0
       ? "-" + slDist.toFixed(dec) + " / +" + tpDist.toFixed(dec)
       : "—";
-    $("#oUnit001").textContent = valPerPrice > 0 ? (valPerPrice * 0.01).toFixed(2) + " USD" : "—";
-    $("#oUnitLot").textContent = valPerPrice > 0 && lots > 0
-      ? (valPerPrice * lots).toFixed(2) + " USD" : "—";
+    $("#oUnit001").textContent = unitValue > 0 ? (unitValue * 0.01).toFixed(2) + " USD" : "—";
+    $("#oUnitLot").textContent = unitValue > 0 && lots > 0
+      ? (unitValue * lots).toFixed(2) + " USD" : "—";
 
     $("#oLots").innerHTML = (lots > 0 ? lots.toFixed(2) : "—") + "<small> lot</small>";
     $("#oLotsHint").textContent = lots > 0
       ? "≈ " + (lots * 10).toFixed(1) + " mini lot · " + (lots * 100).toFixed(0) + " micro lot"
-      : "กรอกทุนและ SL เพื่อคำนวณ";
+      : "กรอกราคาเข้า, SL และทุนเพื่อคำนวณ";
     $("#oRiskAmt").textContent = "-" + riskAmt.toFixed(2) + " USD";
     $("#oRewardAmt").textContent = "+" + reward.toFixed(2) + " USD";
 
@@ -364,11 +359,10 @@
     $("#oRR").textContent = rr > 0 ? "1 : " + rr.toFixed(2) : "—";
     $("#oBE").textContent = rr > 0 ? (100 / (1 + rr)).toFixed(1) + "%" : "—";
 
-    var un = unit === "pips" ? " pips" : "";
     var w = $("#oWarn");
     if (rr > 0 && rr < 1) {
       w.hidden = false;
-      w.textContent = "TP (ระยะ " + tpDist.toFixed(dec) + un + ") เล็กกว่า SL (ระยะ " + slDist.toFixed(dec) + un +
+      w.textContent = "TP (ห่าง " + tpDist.toFixed(dec) + ") เล็กกว่า SL (ห่าง " + slDist.toFixed(dec) +
         ") — ต้องชนะเกิน " + (100 / (1 + rr)).toFixed(1) + "% ของไม้จึงจะเสมอตัว ยังไม่รวมค่า spread และค่าคอมมิชชัน";
     } else { w.hidden = true; }
 
@@ -379,48 +373,24 @@
     } catch (e) {}
   }
 
-  ["fEntry","fSL","fTP","fPipSize","fPipValue","fBalance","fRisk"].forEach(function (id) {
+  $("#fEntry").addEventListener("input", function () { autofillLevels(); render(); });
+  ["fUnitValue", "fBalance", "fRisk"].forEach(function (id) {
     $("#" + id).addEventListener("input", render);
   });
 
   /* กลยุทธ์แบบ (ข): แก้ SL แล้วเลื่อน TP ตามอัตราส่วนที่หนังสือกำหนดให้อัตโนมัติ
      หยุดทำทันทีที่ผู้ใช้แก้ TP เอง เพื่อไม่ให้เขียนทับค่าที่ตั้งใจใส่ */
-  var tpTouched = false;
-  $("#fTP").addEventListener("input", function () { tpTouched = true; });
-  if (planRR && !fixedPlan) {
-    $("#fSL").addEventListener("input", function () {
-      if (tpTouched) return;
-      $("#fTP").value = +(num(this.value) * planRR).toFixed(8);
-      render();
-    });
-  }
-
-  /* สลับหน่วยแล้วแปลงตัวเลขในช่องให้เท่าเดิม — ไม่ให้ระยะ SL/TP เปลี่ยนไปเงียบ ๆ
-     แปลงผ่าน "ระยะราคา" ตรงกลางเสมอ (โหมด level ต้องมีราคาเข้าก่อนถึงจะแปลงได้) */
-  var prevUnit = $("#fUnit").value;
-  var unitLabel = { pips: "(pips)", level: "(ราคาจริง)", price: "(ระยะห่าง)" };
-  $("#fUnit").addEventListener("change", function () {
-    var ps = num($("#fPipSize").value) || 1;
-    var entry = num($("#fEntry").value);
-    var dir = side === "buy" ? 1 : -1;
-    var newUnit = this.value;
-
-    ["fSL", "fTP"].forEach(function (id) {
-      var v = num($("#" + id).value);
-      var isSL = id === "fSL";
-      var dist = prevUnit === "pips" ? v * ps
-               : prevUnit === "level" ? (entry > 0 ? (isSL ? dir * (entry - v) : dir * (v - entry)) : 0)
-               : v;
-      var out = newUnit === "pips" ? (ps > 0 ? dist / ps : dist)
-              : newUnit === "level" ? (entry > 0 ? (isSL ? entry - dir * dist : entry + dir * dist) : dist)
-              : dist;
-      $("#" + id).value = +out.toFixed(8);
-    });
-
-    document.querySelectorAll(".fld .u").forEach(function (s) { s.textContent = unitLabel[newUnit]; });
-    prevUnit = newUnit;
+  $("#fTP").addEventListener("input", function () { tpTouched = true; render(); });
+  $("#fSL").addEventListener("input", function () {
+    slTouched = true;
+    var entry = num($("#fEntry").value), dir = side === "buy" ? 1 : -1;
+    if (planRR && !fixedPlan && !tpTouched && entry > 0) {
+      var slDist = dir * (entry - num(this.value));
+      $("#fTP").value = (entry + dir * slDist * planRR).toFixed(dec);
+    }
     render();
   });
+
   render();
 
   /* ---------- คัดลอกราคา ---------- */
